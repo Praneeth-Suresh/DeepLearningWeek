@@ -2,7 +2,8 @@ import json
 
 # Get the Embedding model
 
-# from sentence_transformers import SentenceTransformer, util # xd xd 
+from sentence_transformers import SentenceTransformer, util
+import re
 
 # Get the Chroma DB client set up
 import chromadb
@@ -24,7 +25,7 @@ Gclient = genai.Client(api_key=GEMINI_API_KEY)
 
 import requests
 
-CLOUDFARE_API_TOKEN = "jgCBig6iRJdHEwt1yXJQwdrYfRKLGZoU6uDHEIta"
+CLOUDFARE_API_TOKEN = os.environ["CLOUDFARE_API_TOKEN"]
 
 API_BASE_URL = "https://api.cloudflare.com/client/v4/accounts/7334438e0dd62f7a7d9989ba0b0b6ee5/ai/run/"
 headers = {"Authorization": f"Bearer {CLOUDFARE_API_TOKEN}"}
@@ -164,18 +165,57 @@ def Validation(text): # Takes in the text and deduces if the post is valid; retu
         
     return json_results
 
-# def VectorSimilarity(paragraph1, paragraph2): # Get the cosine similarity score
-#     model = SentenceTransformer("all-MiniLM-L6-v2")  # Mid-range embedding model
+def VectorSimilarity(paragraph1, paragraph2): # Get the cosine similarity score
+    model = SentenceTransformer("all-MiniLM-L6-v2")  # Mid-range embedding model
     
-#     # Generate embeddings
-#     embedding1 = model.encode(paragraph1, convert_to_tensor=True)
-#     embedding2 = model.encode(paragraph2, convert_to_tensor=True)
+    # Generate embeddings
+    embedding1 = model.encode(paragraph1, convert_to_tensor=True)
+    embedding2 = model.encode(paragraph2, convert_to_tensor=True)
     
-#     # Compute cosine similarity
-#     similarity_score = util.pytorch_cos_sim(embedding1, embedding2).item()
+    # Compute cosine similarity
+    similarity_score = util.pytorch_cos_sim(embedding1, embedding2).item()
     
-#     return similarity_score
+    return similarity_score
 
-# def CrossRefScore(texts):
-#     pass
-# xd xd
+def CrossRefScore(texts):
+    
+    n = len(texts)
+    if n == 0:
+        return []
+    
+    scores = [0] * n  # Store cumulative scores for each entity
+    
+    # Compare each pair (i, j) only once
+    for i in range(n):
+        for j in range(i + 1, n):
+            similarity = VectorSimilarity(texts[i], texts[j])  # Get similarity score
+            scores[i] += similarity
+            scores[j] += similarity  # Since similarity(i, j) == similarity(j, i)
+    
+    # Compute average similarity for each entity
+    averages = [scores[i] / (n - 1) if n > 1 else 0 for i in range(n)]
+    
+    return averages   
+
+def EggScore(text):
+
+    # Predefined exaggerative words (can be expanded)
+    EXAGGERATION_WORDS = {
+        "unbelievable", "incredible", "shocking", "mind-blowing", "jaw-dropping",
+        "extremely", "absolutely", "utterly", "completely", "insanely",
+        "life-changing", "spectacular", "massive", "remarkable", "unprecedented",
+        "best", "worst", "amazing", "astounding", "unreal", "gigantic", "enormous"
+    }
+
+    if not text:
+        return 0.0  # Return 0 for empty texts
+
+    # Tokenize and normalize text (convert to lowercase and remove punctuation)
+    words = re.findall(r"\b\w+\b", text.lower())
+
+    # Count total words and occurrences of exaggerative words
+    total_words = len(words)
+    exaggeration_count = sum(1 for word in words if word in EXAGGERATION_WORDS)
+
+    # Compute exaggeration score as proportion of exaggerative words
+    return exaggeration_count / total_words if total_words > 0 else 0.0
